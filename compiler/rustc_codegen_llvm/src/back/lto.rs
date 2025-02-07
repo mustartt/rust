@@ -166,7 +166,7 @@ fn get_bitcode_slice_from_object_data<'a>(
     // internally in MachOObjectFile.cpp gets treated separately.
     let section_name = bitcode_section_name(cgcx).to_str().unwrap().trim_start_matches("__LLVM,");
     let mut len = 0;
-    let data = unsafe {
+    let mut data = unsafe {
         llvm::LLVMRustGetSliceFromObjectDataByName(
             obj.as_ptr(),
             obj.len(),
@@ -176,7 +176,15 @@ fn get_bitcode_slice_from_object_data<'a>(
         )
     };
     if !data.is_null() {
-        assert!(len != 0);
+        // MCAsmStreamer for XCOFF emits the `.info` section metadata with a header of
+        // 24 bytes. So we must take the bitcode slice at a 24 bytes offset from the
+        // start of the `.info` section.
+        if cgcx.target_is_like_aix {
+            let header_size = 24;
+            data = unsafe { data.add(header_size) };
+            len = len - header_size;
+        }
+        assert!(len > 0);
         let bc = unsafe { slice::from_raw_parts(data, len) };
 
         // `bc` must be a sub-slice of `obj`.

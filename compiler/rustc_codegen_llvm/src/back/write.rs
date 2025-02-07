@@ -1009,7 +1009,7 @@ pub(crate) fn bitcode_section_name(cgcx: &CodegenContext<LlvmCodegenBackend>) ->
     if cgcx.target_is_like_osx {
         c"__LLVM,__bitcode"
     } else if cgcx.target_is_like_aix {
-        c".ipa"
+        c".info"
     } else {
         c".llvmbc"
     }
@@ -1064,13 +1064,20 @@ unsafe fn embed_bitcode(
             || cgcx.target_arch == "wasm32"
             || cgcx.target_arch == "wasm64"
         {
+            // PPC Backend will treat the GV with name `llvm.embedded.object`
+            // differently from other globals. It will emit the corresponding
+            // metadata entry for the bitcode in the `.info` section, in the
+            // format that the AIX Linker can work with.
+            let bitcode_global_name = if cgcx.target_is_like_aix {
+                c"llvm.embedded.object"
+            } else {
+                c"rust.embedded.module"
+            };
+
             // We don't need custom section flags, create LLVM globals.
             let llconst = common::bytes_in_context(llcx, bitcode);
-            let llglobal = llvm::LLVMAddGlobal(
-                llmod,
-                common::val_ty(llconst),
-                c"rustc.embedded.module".as_ptr(),
-            );
+            let llglobal =
+                llvm::LLVMAddGlobal(llmod, common::val_ty(llconst), bitcode_global_name.as_ptr());
             llvm::LLVMSetInitializer(llglobal, llconst);
 
             llvm::set_section(llglobal, bitcode_section_name(cgcx));
